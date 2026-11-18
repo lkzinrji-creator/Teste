@@ -1,4 +1,4 @@
-local Players = game:GetService("Players") 
+local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
@@ -342,7 +342,6 @@ local function HasAny(t, words)
     return false
 end
 
--- ESP Básico
 local ESPObjects = {}
 local EntityNames = {
     "rush","ambush","figure","seek","screech","a60","a120","blitz",
@@ -530,7 +529,6 @@ local function Scan()
     end
 end
 
--- Player ESP
 local PlayerESP = {Active=false, Data={}, GlobalConns={}}
 local function PE_DisconnectList(list)
     for _, c in ipairs(list) do pcall(function() c:Disconnect() end) end
@@ -609,7 +607,6 @@ local function PE_Rebuild()
 end
 CleanupHooks[#CleanupHooks+1] = PE_Disable
 
--- Battery ESP (mantido igual, funcional)
 local BatteryESP = {Active=false, Items={}, Token=nil}
 local function IsInsideCharacter(o)
     local c = o.Parent
@@ -704,7 +701,7 @@ end
 CleanupHooks[#CleanupHooks+1] = BE_Disable
 
 -- ============================================================
--- ENTITY SKIN (CORRIGIDO E MELHORADO)
+-- ENTITY SKIN (CORRIGIDO)
 -- ============================================================
 local EntitySkinObjects = {}
 local BuildEntitySkinMap, BuildEntityAccessoryMap
@@ -785,8 +782,6 @@ BuildEntitySkinMap = function(model, avatar)
     return map
 end
 
--- CORREÇÃO CRÍTICA: forward declare já feito acima (BuildEntityAccessoryMap)
--- e agora atribuímos via `= function` em vez de `local function`
 BuildEntityAccessoryMap = function(avatar, partMap)
     local attachmentOwners = {}
     for ap, sourcePart in pairs(partMap or {}) do
@@ -823,7 +818,6 @@ BuildEntityAccessoryMap = function(avatar, partMap)
     return list
 end
 
--- Ocultação robusta: BaseParts (LTM), Decals, Textures, Particles, Trails, Beams, Billboards, Highlights
 local function HideEntityVisual(item, record, hide)
     if item:IsA("BasePart") then
         record.PartData = record.PartData or {}
@@ -928,7 +922,6 @@ local function ApplyEntitySkin(model)
     local record = {Avatar = clone}
     EntitySkinObjects[model] = record
 
-    -- Parent primeiro, DEPOIS mapear (para PivotTo/CFrame funcionar)
     pcall(function()
         clone:PivotTo(model:GetPivot())
         clone.Parent = Workspace
@@ -937,10 +930,8 @@ local function ApplyEntitySkin(model)
     record.PartMap = BuildEntitySkinMap(model, clone)
     record.AccessoryMap = BuildEntityAccessoryMap(clone, record.PartMap)
 
-    -- Oculta a entidade original (CORRIGIDO: agora executa de verdade)
     ApplyEntityVisuals(model, record, true)
 
-    -- Escuta novas partes adicionadas na entidade
     record.DescendantConn = model.DescendantAdded:Connect(function(desc)
         if Running and EntitySkinObjects[model] == record then
             task.defer(function()
@@ -1001,7 +992,6 @@ CleanupHooks[#CleanupHooks+1] = function()
     for model in pairs(EntitySkinObjects) do RemoveEntitySkin(model) end
 end
 
--- Sync visual (a cada frame) e re-ocultação periódica (a cada 0.75s)
 Track(RunService.RenderStepped:Connect(function()
     if not Settings.EntitySkin then return end
     for model, record in pairs(EntitySkinObjects) do
@@ -1030,7 +1020,6 @@ Track(RunService.Heartbeat:Connect(function()
     if Settings.EntitySkin then RefreshEntitySkins() end
 end))
 
--- BOTÕES ESP
 AddButton("ESP","ESP Portas (somente Door)","Doors",function(v) if not v then RemoveCategory("DOOR") end end)
 AddButton("ESP","ESP Livros (LiveHintBook)","Books",function(v) if not v then RemoveCategory("BOOK") end end)
 AddButton("ESP","ESP Alavanca (LeverForGate)","Lever",function(v) if not v then RemoveCategory("LEVER") end end)
@@ -1090,7 +1079,6 @@ CleanupHooks[#CleanupHooks+1] = function()
     end
 end
 
--- AUTO systems
 local function GetChain(prompt, maxDepth)
     local chain = {}
     local rooms = Workspace:FindFirstChild("CurrentRooms")
@@ -1379,7 +1367,6 @@ AddAction("CONFIG","Restaurar padrão",function()
     Settings.SaveConfig = true; SaveSettings(); Notify("PADRÕES APLICADOS; REEXECUTE")
 end)
 
--- Code 50 (mantido)
 local CodeGui = Instance.new("ScreenGui")
 CodeGui.Name = "LKAutoCode50"
 CodeGui.ResetOnSpawn = false
@@ -1708,7 +1695,6 @@ AddAction("EXTRAS","Diagnóstico Code 50 (console)",function()
     Notify("DIAGNÓSTICO ENVIADO AO CONSOLE")
 end)
 
--- Open button + drag
 local OpenButton = Instance.new("TextButton")
 OpenButton.Size = UDim2.fromOffset(55,48)
 OpenButton.Position = UDim2.new(0,10,0.5,0)
