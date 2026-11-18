@@ -1,15 +1,57 @@
+-- ============================================================================
+-- LK DOORS SYSTEM V10.8 — DELTA ANDROID COMPATIBLE
+-- Correções: parent seguro (gethui/CoreGui/PlayerGui), boot guard,
+--            correção do escopo de BuildEntityAccessoryMap,
+--            diagnóstico de inicialização e tratamento de erros.
+-- ============================================================================
+
+print("[LK] Iniciando script...")
+
+-- ── DELTA BOOT GUARD ──────────────────────────────────────────────────────
+-- Delta mobile às vezes executa antes do LocalPlayer existir.
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(0.5)
+
 local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+if not Player then
+    repeat task.wait(0.1) until Players.LocalPlayer
+    Player = Players.LocalPlayer
+end
+print("[LK] LocalPlayer OK:", Player.Name)
+
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
-local Player = Players.LocalPlayer
+-- ── PARENT SEGURO PARA A GUI (Delta-safe) ─────────────────────────────────
+-- Prioridade: gethui() → CoreGui → PlayerGui
+local _guiParent
+do
+    local ok1, r1 = pcall(function() return gethui() end)
+    if ok1 and r1 then
+        _guiParent = r1
+        print("[LK] GUI parent: gethui()")
+    else
+        local ok2, r2 = pcall(function() return game:GetService("CoreGui") end)
+        if ok2 and r2 then
+            _guiParent = r2
+            print("[LK] GUI parent: CoreGui")
+        else
+            _guiParent = Player:FindFirstChild("PlayerGui")
+                or Player:WaitForChild("PlayerGui", 10)
+                or Player.PlayerGui
+            print("[LK] GUI parent: PlayerGui (fallback)")
+        end
+    end
+end
 
 local Running = true
 local Connections = {}
@@ -31,13 +73,20 @@ pcall(function()
     env.LK_DOORS_CLEANUP = Cleanup
 end)
 
+-- Limpeza de versões anteriores (procura no parent seguro e no PlayerGui)
 pcall(function()
     for _, name in ipairs({"LKDoorsSystem","LKAutoCode50"}) do
-        local old = CoreGui:FindFirstChild(name)
+        local old = _guiParent:FindFirstChild(name)
         if old then old:Destroy() end
+        local oldPg = Player:FindFirstChild("PlayerGui")
+        if oldPg then
+            local old2 = oldPg:FindFirstChild(name)
+            if old2 then old2:Destroy() end
+        end
     end
 end)
 
+-- ── SETTINGS ─────────────────────────────────────────────────────────────
 local Settings = {
     Entities=false, Doors=false, Items=false, Books=false, Lever=false,
     Notifier=false, Speed=false, Optimize=false, AutoKey=false, AutoItems=false,
@@ -77,6 +126,7 @@ local function SaveSettings(force)
     pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(data)) end)
 end
 LoadSettings()
+print("[LK] Configurações carregadas")
 
 local Purple = Color3.fromRGB(145,75,255)
 local Dark = Color3.fromRGB(15,15,23)
@@ -84,10 +134,19 @@ local Panel = Color3.fromRGB(25,25,37)
 local ButtonColor = Color3.fromRGB(38,38,53)
 local White = Color3.fromRGB(245,245,255)
 
-local Gui = Instance.new("ScreenGui")
-Gui.Name = "LKDoorsSystem"
-Gui.ResetOnSpawn = false
-Gui.Parent = CoreGui
+-- ── GUI PRINCIPAL (com pcall para capturar falhas de criação) ─────────────
+local Gui
+local okGui, errGui = pcall(function()
+    Gui = Instance.new("ScreenGui")
+    Gui.Name = "LKDoorsSystem"
+    Gui.ResetOnSpawn = false
+    Gui.Parent = _guiParent
+end)
+if not okGui or not Gui then
+    warn("[LK] FALHA ao criar ScreenGui:", errGui)
+    return
+end
+print("[LK] ScreenGui criada com sucesso")
 CleanupHooks[#CleanupHooks+1] = function() SafeDestroy(Gui) end
 
 local Camera = Workspace.CurrentCamera
@@ -129,7 +188,7 @@ local Subtitle = Instance.new("TextLabel")
 Subtitle.Position = UDim2.fromOffset(14,29)
 Subtitle.Size = UDim2.new(1,-100,0,15)
 Subtitle.BackgroundTransparency = 1
-Subtitle.Text = "DOORS ORIGINAL  •  VERSION 10.4"
+Subtitle.Text = "DOORS ORIGINAL  •  VERSION 10.8 DELTA"
 Subtitle.TextColor3 = Purple
 Subtitle.Font = Enum.Font.GothamBold
 Subtitle.TextSize = 9
@@ -701,7 +760,7 @@ end
 CleanupHooks[#CleanupHooks+1] = BE_Disable
 
 -- ============================================================
--- ENTITY SKIN (CORRIGIDO)
+-- ENTITY SKIN (corrigido: forward declaration)
 -- ============================================================
 local EntitySkinObjects = {}
 local BuildEntitySkinMap, BuildEntityAccessoryMap
@@ -1079,6 +1138,7 @@ CleanupHooks[#CleanupHooks+1] = function()
     end
 end
 
+-- ── AUTO SYSTEMS (com fallback de fireproximityprompt) ────────────────────
 local function GetChain(prompt, maxDepth)
     local chain = {}
     local rooms = Workspace:FindFirstChild("CurrentRooms")
@@ -1246,11 +1306,13 @@ local function PrepareKey()
     return false
 end
 
+-- fireproximityprompt pode não existir ou falhar; fallback robusto
 local HasFirePrompt = type(fireproximityprompt) == "function"
 local function FirePrompt(prompt)
     if HasFirePrompt then
         if pcall(fireproximityprompt, prompt) then return true end
     end
+    -- Fallback universal: simula hold via InputHoldBegin/End
     return pcall(function()
         prompt:InputHoldBegin()
         task.wait(math.max(prompt.HoldDuration, 0) + 0.05)
@@ -1258,7 +1320,7 @@ local function FirePrompt(prompt)
     end)
 end
 if not HasFirePrompt then
-    task.delay(1, function() Notify("fireproximityprompt indisponível: modo alternativo") end)
+    task.delay(1, function() Notify("fireproximityprompt indisponível: usando fallback") end)
 end
 
 local AutoSystems = {
@@ -1367,10 +1429,11 @@ AddAction("CONFIG","Restaurar padrão",function()
     Settings.SaveConfig = true; SaveSettings(); Notify("PADRÕES APLICADOS; REEXECUTE")
 end)
 
+-- ── CODE 50 GUI (também no parent seguro) ─────────────────────────────────
 local CodeGui = Instance.new("ScreenGui")
 CodeGui.Name = "LKAutoCode50"
 CodeGui.ResetOnSpawn = false
-CodeGui.Parent = CoreGui
+CodeGui.Parent = _guiParent
 CleanupHooks[#CleanupHooks+1] = function() SafeDestroy(CodeGui) end
 
 local CodeFrame = Instance.new("Frame")
@@ -1695,6 +1758,7 @@ AddAction("EXTRAS","Diagnóstico Code 50 (console)",function()
     Notify("DIAGNÓSTICO ENVIADO AO CONSOLE")
 end)
 
+-- ── MINIMIZAR / ABRIR ─────────────────────────────────────────────────────
 local OpenButton = Instance.new("TextButton")
 OpenButton.Size = UDim2.fromOffset(55,48)
 OpenButton.Position = UDim2.new(0,10,0.5,0)
@@ -1736,5 +1800,5 @@ task.spawn(function()
     end
 end)
 
-Notify("LK DOORS V10.4 CARREGADO!")
-print("LK DOORS SYSTEM V10.4 carregado!")
+Notify("LK DOORS V10.8 DELTA CARREGADO!")
+print("[LK] Menu criado e script pronto. Versão 10.8 DELTA.")
